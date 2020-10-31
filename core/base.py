@@ -9,22 +9,40 @@ ORIDATAPATH = "F:/machineLearnCamp/Project/answerCorrectnessPrediction/oriData/"
 
 
 def get_questions(ori_data_path=ORIDATAPATH):
+    """
+    :param ori_data_path:原始数据路径
+    :return:问题数据数据框
+    """
     questions = pd.read_csv(ori_data_path + "questions.csv", dtype={"question_id": 'int16', "correct_answer": "int8"})
     return questions
 
 
 def get_lectures(ori_data_path=ORIDATAPATH):
+    """
+    :param ori_data_path:原始数据路径
+    :return:课程数据数据框
+    """
     lectures = pd.read_csv(ori_data_path + "lectures.csv", dtype={"lecture_id": "int16"})
     return lectures
 
 
 def get_train_df(ori_data_path=ORIDATAPATH):
+    """
+    :param ori_data_path:原始数据路径
+    :return:原始train(用户行为记录数据)数据框
+    """
     with open(ori_data_path + "train.pkl", "rb") as f:
         train_df = pickle.load(f)
     return train_df
 
 
 def get_sentences(df, group_columns, target_columns):
+    """
+    :param df:2维行为序列数据框
+    :param group_columns:指定作为分组依据的列
+    :param target_columns:指定待提取embedding特征目标列
+    :return:以group_columns分组组成的target_columns序列列表
+    """
     sentences = []
     for g in df.groupby([group_columns]):
         sentence = [str(i) for i in list(g[1][target_columns])]
@@ -33,6 +51,13 @@ def get_sentences(df, group_columns, target_columns):
 
 
 def get_w2v_feat(sentences, index_name, vec_size, prefix):
+    """
+    :param sentences:序列样本list
+    :param index_name:特征索引列名称
+    :param vec_size:提取embedding特征维度
+    :param prefix:特征命名前缀
+    :return:以index_name为索引的vec_size维embedding特征数据框
+    """
     model = Word2Vec(sentences=sentences, size=vec_size, window=5, min_count=1, workers=16)
 
     # vec字典表示
@@ -74,8 +99,16 @@ def get_question_tags(cache=CACHE, regain=False):
     return res
 
 
-def get_sample(cache=CACHE, ori_data_path=ORIDATAPATH, tail=0, span=10):
-    if os.path.exists(cache+"sample_{}_{}.pkl".format(tail, span)):
+def get_sample(cache=CACHE, ori_data_path=ORIDATAPATH, tail=0, span=10, regain=False):
+    """
+    :param cache:缓存路径
+    :param ori_data_path:原始train数据路径
+    :param tail:排除每个用户末尾行为记录tail行
+    :param span:每位用户提取训练样本span行
+    :param regain:是否重新生成
+    :return:sample：样本  behave_for_sample：可以供sample提取特征的行为记录
+    """
+    if os.path.exists(cache+"sample_{}_{}.pkl".format(tail, span)) and not regain:
         with open(cache+"sample_{}_{}.pkl".format(tail, span), "rb") as f:
             sample = pickle.load(f)
         with open(cache+"behave_for_sample_{}_{}.pkl".format(tail, span), "rb") as f:
@@ -100,9 +133,10 @@ def get_sample(cache=CACHE, ori_data_path=ORIDATAPATH, tail=0, span=10):
         #     train_df = pd.merge(user_subset, train_df, on=["user_id"], how="left")
 
         # sample & behave_for_sample
-        sample = train_df[train_df.content_type_id == 0].groupby(["user_id"]).tail(span+tail).copy()
+        sample = train_df.groupby(["user_id"]).tail(span+tail).copy()
         behave_for_sample = train_df[~train_df["row_id"].isin(sample["row_id"])].copy()
         sample = sample.groupby(["user_id"]).head(span).copy()
+        sample = sample.loc[sample.content_type_id == 0, :]
         del train_df
 
         # save the deal
@@ -120,7 +154,7 @@ def get_sample(cache=CACHE, ori_data_path=ORIDATAPATH, tail=0, span=10):
 
 if __name__ == "__main__":
     # 创建5份样本
-    # for i in range(5):
-    #     get_sample(tail=i*10)
+    for i in range(5):
+        get_sample(tail=i*10, regain=True)
 
-    get_question_tags(regain=True)
+    get_question_tags()
