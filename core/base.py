@@ -111,8 +111,11 @@ def get_sample(cache=CACHE, ori_data_path=ORIDATAPATH, tail=0, span=10, regain=F
     if os.path.exists(cache+"sample_{}_{}.pkl".format(tail, span)) and not regain:
         with open(cache+"sample_{}_{}.pkl".format(tail, span), "rb") as f:
             sample = pickle.load(f)
-        with open(cache+"behave_for_sample_{}_{}.pkl".format(tail, span), "rb") as f:
-            behave_for_sample = pickle.load(f)
+
+        with open(cache+"ignore_rows_of_behave_for_sample_{}_{}.pkl".format(tail, span), "rb") as f:
+            train_df = get_train_df(ori_data_path=ori_data_path)
+            ignore_rows = pickle.load(f)
+            behave_for_sample = train_df[~train_df["row_id"].isin(ignore_rows["row_id"])].copy()
     else:
         # 读取数据
         train_df = get_train_df(ori_data_path=ori_data_path)
@@ -133,17 +136,17 @@ def get_sample(cache=CACHE, ori_data_path=ORIDATAPATH, tail=0, span=10, regain=F
         #     train_df = pd.merge(user_subset, train_df, on=["user_id"], how="left")
 
         # sample & behave_for_sample
-        sample = train_df.groupby(["user_id"]).tail(span+tail).copy()
-        behave_for_sample = train_df[~train_df["row_id"].isin(sample["row_id"])].copy()
-        sample = sample.groupby(["user_id"]).head(span).copy()
+        ignore_rows = train_df.groupby(["user_id"]).tail(span+tail).copy()
+        behave_for_sample = train_df[~train_df["row_id"].isin(ignore_rows["row_id"])].copy()
+        sample = ignore_rows.groupby(["user_id"]).head(span).copy()
         sample = sample.loc[sample.content_type_id == 0, :]
         del train_df
 
         # save the deal
         with open(cache+"sample_{}_{}.pkl".format(tail, span), "wb") as f:
             pickle.dump(sample, f)
-        with open(cache+"behave_for_sample_{}_{}.pkl".format(tail, span), "wb") as f:
-            pickle.dump(behave_for_sample, f)
+        with open(cache+"ignore_rows_of_behave_for_sample_{}_{}.pkl".format(tail, span), "wb") as f:
+            pickle.dump(ignore_rows, f)
 
     # print deal info
     print("get len of sample_{}_{}:{}".format(tail, span, len(sample)))
@@ -154,7 +157,9 @@ def get_sample(cache=CACHE, ori_data_path=ORIDATAPATH, tail=0, span=10, regain=F
 
 if __name__ == "__main__":
     # 创建5份样本
-    for i in range(5):
-        get_sample(tail=i*10, regain=True)
+    # for i in range(5):
+    #     get_sample(tail=i*10, regain=True)
+    # TODO:regain all sample
+    get_sample()
 
     get_question_tags()
