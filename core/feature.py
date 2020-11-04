@@ -2,7 +2,7 @@ from core.base import *
 import numpy as np
 
 
-def get_usr_acc_feat(cache=CACHE, tail=0, span=10, regain=False):
+def get_usr_acc_feat(cache=CACHE, tail=0, span=6, regain=False):
     """
     :param cache:缓存路径
     :param tail:排除每个用户末尾tail个回答记录
@@ -17,7 +17,7 @@ def get_usr_acc_feat(cache=CACHE, tail=0, span=10, regain=False):
         if span == 0:
             df = get_train_df()
         else:
-            df = get_sample(tail=tail, span=span)[1]
+            df = get_sample(tail=tail, span=span, contain=2)
         questions = get_questions()
         lectures = get_lectures()
 
@@ -38,8 +38,7 @@ def get_usr_acc_feat(cache=CACHE, tail=0, span=10, regain=False):
 
         # 用户对各种part（top_level）的题目做题数量，准确率
         user_question_act = df.loc[df.content_type_id == 0, :]
-        user_question_act = pd.merge(user_question_act, questions.rename(columns={"question_id": "content_id"}),
-                                     on=["content_id"], how="left")
+        user_question_act = pd.merge(user_question_act, questions, on=["content_id"], how="left")
         tmp = pd.pivot_table(user_question_act, index=["user_id"], columns=["part"], values=["answered_correctly"],
                              aggfunc=["count", "mean"])
         tmp.columns = ["usr_part" + str(x) + "ans_count" for x in range(1, 8)] + \
@@ -100,7 +99,7 @@ def get_usr_acc_feat(cache=CACHE, tail=0, span=10, regain=False):
     return res
 
 
-def get_usr_act_time_feat(cache=CACHE, tail=0, span=10, regain=False):
+def get_usr_act_time_feat(cache=CACHE, tail=0, span=6, regain=False):
     """
     :param cache:缓存路径
     :param tail:排除每个用户末尾tail个回答记录
@@ -115,7 +114,7 @@ def get_usr_act_time_feat(cache=CACHE, tail=0, span=10, regain=False):
         if span == 0:
             df = get_train_df()
         else:
-            df = get_sample(tail=tail, span=span)[1]
+            df = get_sample(tail=tail, span=span, contain=2)
 
         # get usr
         res = df[["user_id"]].drop_duplicates(subset=["user_id"])
@@ -274,7 +273,7 @@ def get_usr_vec_lecture(cache=CACHE, size=5, regain=False):
     return res
 
 
-def get_usr_qpart_acc_feat(cache=CACHE, tail=0, span=10, regain=False):
+def get_usr_qpart_acc_feat(cache=CACHE, tail=0, span=6, regain=False):
     """
     :param cache:缓存路径
     :param tail:排除每个用户末尾tail个回答记录
@@ -289,13 +288,12 @@ def get_usr_qpart_acc_feat(cache=CACHE, tail=0, span=10, regain=False):
         if span == 0:
             df = get_train_df()
         else:
-            df = get_sample(tail=tail, span=span)[1]
+            df = get_sample(tail=tail, span=span, contain=2)
         questions = get_questions()
 
         # 用户每个part的答题准确率，答题数量
         df = df.loc[df.content_type_id == 0, ["user_id", "content_id", "answered_correctly"]]
-        df = pd.merge(df, questions[["question_id", "part"]].rename(columns={"question_id": "content_id"}),
-                      on=["content_id"], how="left")
+        df = pd.merge(df, questions[["content_id", "part"]], on=["content_id"], how="left")
 
         res = df.groupby(["user_id", "part"]).agg({"answered_correctly": ["count","mean"]})
         res.columns = ["usr_curpart_count", "usr_curpart_accuracy"]
@@ -309,7 +307,7 @@ def get_usr_qpart_acc_feat(cache=CACHE, tail=0, span=10, regain=False):
     return res
 
 
-def get_usrxquestion_feat(cache=CACHE, tail=0, span=10, regain=False):
+def get_usrxquestion_feat(cache=CACHE, tail=0, span=6, regain=False):
     """
     :param cache:缓存路径
     :param tail:排除每个用户末尾tail个回答记录
@@ -324,7 +322,7 @@ def get_usrxquestion_feat(cache=CACHE, tail=0, span=10, regain=False):
         if span == 0:
             df = get_train_df()
         else:
-            df = get_sample(tail=tail, span=span)[1]
+            df = get_sample(tail=tail, span=span, contain=2)
 
         # 提取用户题目交互记录
         res = df.loc[df.content_type_id == 0, ["user_id", "content_id"]].drop_duplicates(subset=["user_id", "content_id"])
@@ -382,7 +380,7 @@ def get_tag_tar_code(cache=CACHE, regain=False):
     return res
 
 
-def get_usr_tag_feat(cache=CACHE, tail=0, span=10, regain=False):
+def get_usr_tag_feat(cache=CACHE, tail=0, span=6, regain=False):
     """
     :param cache:缓存路径
     :param tail:排除每个用户末尾tail个回答记录
@@ -398,7 +396,7 @@ def get_usr_tag_feat(cache=CACHE, tail=0, span=10, regain=False):
         if span == 0:
             df = get_train_df()
         else:
-            df = get_sample(tail=tail, span=span)[1]
+            df = get_sample(tail=tail, span=span, contain=2)
         df = df.loc[df.content_type_id == 0, ["user_id", "content_id", "answered_correctly"]]
 
         # get usr tag gain & count
@@ -412,28 +410,52 @@ def get_usr_tag_feat(cache=CACHE, tail=0, span=10, regain=False):
     return res
 
 
+def get_part_tar_code(cache=CACHE, regain=False):
+    """
+    :param cache:缓存路径
+    :param regain:是否重新生成
+    :return: part的target encode
+    """
+    if os.path.exists(cache + "part_tar_code.csv") and not regain:
+        res = pd.read_csv(cache + "part_tar_code.csv")
+    else:
+        df = get_train_df()
+        questions = get_questions()
+
+        df = df.loc[df.content_type_id == 0, ["content_id", "answered_correctly"]]
+        df = pd.merge(df, questions[["content_id", "part"]], on=["content_id"], how="left")
+
+        res = df.groupby(["part"]).agg({"answered_correctly": "mean"})
+        res.columns = ["part_tar_code"]
+        res.reset_index(inplace=True)
+
+        res.to_csv(cache + "part_tar_code.csv")
+
+    return res
+
+
 if __name__ == "__main__":
-    for i in range(5):
-        # get_usr_acc_feat(tail=i*10)
-        # get_usr_act_time_feat(tail=i*10)
-        # get_usr_qpart_acc_feat(tail=i*10)
-        # get_usrxquestion_feat(tail=i*10)
-        get_usr_tag_feat(tail=i*10, regain=True)
-
-    # get_question_acc_feat(regain=True)
-
-    # get_usr_vec_ans()
-
-    # get_question_vec_ans()
-    # get_usr_vec_lecture()
+    for i in range(1):
+        get_usr_acc_feat(tail=i*6)
+        get_usr_act_time_feat(tail=i*6)
+        get_usr_qpart_acc_feat(tail=i*6)
+        get_usrxquestion_feat(tail=i*6)
+        get_usr_tag_feat(tail=i*6)
     # get_usrxquestion_feat(span=0, regain=True)
     #
     # get_usr_acc_feat(span=0, regain=True)
     # get_usr_act_time_feat(span=0, regain=True)
     # get_usr_qpart_acc_feat(span=0, regain=True)
-    get_usr_tag_feat(span=0, regain=True)
-
-    get_tag_tar_code(regain=True)
+    #
+    # # get_question_acc_feat(regain=True)
+    #
+    # # get_usr_vec_ans()
+    #
+    # # get_question_vec_ans()
+    # # get_usr_vec_lecture()
+    # get_usrxquestion_feat(span=0, regain=True)
+    #
+    # get_tag_tar_code(regain=True)
 
 
 

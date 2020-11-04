@@ -14,6 +14,7 @@ def get_questions(ori_data_path=ORIDATAPATH):
     :return:问题数据数据框
     """
     questions = pd.read_csv(ori_data_path + "questions.csv", dtype={"question_id": 'int16', "correct_answer": "int8"})
+    questions.rename(columns={"question_id": "content_id"}, inplace=True)
     return questions
 
 
@@ -99,54 +100,99 @@ def get_question_tags(cache=CACHE, regain=False):
     return res
 
 
-def get_sample(cache=CACHE, ori_data_path=ORIDATAPATH, tail=0, span=10, regain=False):
+def get_sample(cache=CACHE, ori_data_path=ORIDATAPATH, tail=0, span=6, contain=0, regain=False):
     """
     :param cache:缓存路径
     :param ori_data_path:原始train数据路径
     :param tail:排除每个用户末尾行为记录tail行
     :param span:每位用户提取训练样本span行
+    :param contain:0-sample and behave for sample, 1-sample only, 2-behave only
     :param regain:是否重新生成
     :return:sample：样本  behave_for_sample：可以供sample提取特征的行为记录
     """
-    if os.path.exists(cache+"sample_{}_{}.pkl".format(tail, span)) and not regain:
-        with open(cache+"sample_{}_{}.pkl".format(tail, span), "rb") as f:
-            sample = pickle.load(f)
+    if regain:
+        sample, behave_for_sample = sample_generator(cache=cache, ori_data_path=ori_data_path, tail=tail, span=span)
+        if contain == 0:
+            return sample, behave_for_sample
+        elif contain == 1:
+            return sample
+        elif contain == 2:
+            return behave_for_sample
 
-        with open(cache+"ignore_rows_of_behave_for_sample_{}_{}.pkl".format(tail, span), "rb") as f:
-            train_df = get_train_df(ori_data_path=ori_data_path)
-            ignore_rows = pickle.load(f)
-            behave_for_sample = train_df[~train_df["row_id"].isin(ignore_rows["row_id"])].copy()
     else:
-        # 读取数据
-        train_df = get_train_df(ori_data_path=ori_data_path)
+        if os.path.exists(cache+"sample_{}_{}.pkl".format(tail, span)) and \
+                os.path.exists(cache+"ignore_rows_of_behave_for_sample_{}_{}.pkl".format(tail, span)):
+            print("load from cache ...")
+            if contain == 0:
+                with open(cache+"sample_{}_{}.pkl".format(tail, span), "rb") as f:
+                    sample = pickle.load(f)
 
-        # 序列化数据读取问题，临时处理方案
-        train_df["prior_question_had_explanation"].fillna(False, inplace=True)
-        train_df.astype({"prior_question_had_explanation": "int8"})
-        # # 采样用户sample_rate
-        # # 用户列表
-        # if sample_rate < 1:
-        #     user = train_df[["user_id"]].drop_duplicates(subset=["user_id"])
-        #
-        #     # 随机采样
-        #     from sklearn.model_selection import train_test_split
-        #     user_left, user_subset, c, d = train_test_split(user, user, test_size=sample_rate, shuffle=True)
-        #
-        #     # 过滤用户行为数据
-        #     train_df = pd.merge(user_subset, train_df, on=["user_id"], how="left")
+                with open(cache+"ignore_rows_of_behave_for_sample_{}_{}.pkl".format(tail, span), "rb") as f:
+                    train_df = get_train_df(ori_data_path=ori_data_path)
+                    ignore_rows = pickle.load(f)
+                    behave_for_sample = train_df[~train_df["row_id"].isin(ignore_rows["row_id"])].copy()
+                return sample, behave_for_sample
+            elif contain == 1:
+                with open(cache+"sample_{}_{}.pkl".format(tail, span), "rb") as f:
+                    sample = pickle.load(f)
+                return sample
+            elif contain == 2:
+                with open(cache+"ignore_rows_of_behave_for_sample_{}_{}.pkl".format(tail, span), "rb") as f:
+                    train_df = get_train_df(ori_data_path=ori_data_path)
+                    ignore_rows = pickle.load(f)
+                    behave_for_sample = train_df[~train_df["row_id"].isin(ignore_rows["row_id"])].copy()
+                return behave_for_sample
 
-        # sample & behave_for_sample
-        ignore_rows = train_df.groupby(["user_id"]).tail(span+tail).copy()
-        behave_for_sample = train_df[~train_df["row_id"].isin(ignore_rows["row_id"])].copy()
-        sample = ignore_rows.groupby(["user_id"]).head(span).copy()
-        sample = sample.loc[sample.content_type_id == 0, :]
-        del train_df
+        else:
+            print("find not cache, rebuilding ...")
+            sample, behave_for_sample = sample_generator(cache=cache, ori_data_path=ori_data_path, tail=tail, span=span)
+            if contain == 0:
+                return sample, behave_for_sample
+            elif contain == 1:
+                return sample
+            elif contain == 2:
+                return behave_for_sample
 
-        # save the deal
-        with open(cache+"sample_{}_{}.pkl".format(tail, span), "wb") as f:
-            pickle.dump(sample, f)
-        with open(cache+"ignore_rows_of_behave_for_sample_{}_{}.pkl".format(tail, span), "wb") as f:
-            pickle.dump(ignore_rows, f)
+
+def sample_generator(cache=CACHE, ori_data_path=ORIDATAPATH, tail=0, span=6):
+    """
+    :param cache:缓存路径
+    :param ori_data_path:原始train数据路径
+    :param tail:排除每个用户末尾行为记录tail行
+    :param span:每位用户提取训练样本span行
+    :return:(sample, behave_for_sample)
+    """
+    print("generating samples_{}_{} and its behave ...".format(tail, span))
+    # 读取数据
+    train_df = get_train_df(ori_data_path=ori_data_path)
+
+    # 序列化数据读取问题，临时处理方案
+    train_df["prior_question_had_explanation"].fillna(False, inplace=True)
+    train_df.astype({"prior_question_had_explanation": "int8"})
+    # # 采样用户sample_rate
+    # # 用户列表
+    # if sample_rate < 1:
+    #     user = train_df[["user_id"]].drop_duplicates(subset=["user_id"])
+    #
+    #     # 随机采样
+    #     from sklearn.model_selection import train_test_split
+    #     user_left, user_subset, c, d = train_test_split(user, user, test_size=sample_rate, shuffle=True)
+    #
+    #     # 过滤用户行为数据
+    #     train_df = pd.merge(user_subset, train_df, on=["user_id"], how="left")
+
+    # sample & behave_for_sample
+    ignore_rows = train_df.groupby(["user_id"]).tail(span + tail).copy()
+    behave_for_sample = train_df[~train_df["row_id"].isin(ignore_rows["row_id"])].copy()
+    sample = ignore_rows.groupby(["user_id"]).head(span).copy()
+    sample = sample.loc[sample.content_type_id == 0, :]
+    del train_df
+
+    # save the deal
+    with open(cache + "sample_{}_{}.pkl".format(tail, span), "wb") as f:
+        pickle.dump(sample, f)
+    with open(cache + "ignore_rows_of_behave_for_sample_{}_{}.pkl".format(tail, span), "wb") as f:
+        pickle.dump(ignore_rows, f)
 
     # print deal info
     print("get len of sample_{}_{}:{}".format(tail, span, len(sample)))
@@ -160,6 +206,6 @@ if __name__ == "__main__":
     # for i in range(5):
     #     get_sample(tail=i*10, regain=True)
     # TODO:regain all sample
-    get_sample()
+    print(get_sample(span=7, contain=1))
 
-    get_question_tags()
+    # get_question_tags()
